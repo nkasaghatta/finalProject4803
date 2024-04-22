@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def plot_data(filename):
+def plot_data(filename, outPlot):
     with open(filename, 'r') as file:
         y_values = np.array([float(line.strip()) for line in file])
 
@@ -20,7 +20,8 @@ def plot_data(filename):
     plt.xlabel('Index (x)')
     plt.ylabel('Average Value (y)')
     plt.grid(True)
-    plt.show()
 
+    plt.savefig(outPlot)
+    plt.close()
 
-plot_data('ICPC_2_ML_6_SL_500_SC_10/icpcdata.txt')
+plot_data('ICPC_2_ML_6_SL_500_SC_10/icpcdata.txt', 'ICPC_2_ML_6_SL_500_SC_10/chunkPlot.png')

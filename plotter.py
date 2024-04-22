@@ -14,7 +14,6 @@ def plot_data(filename, outputPlot):
     plt.xlabel('Index (x)')
     plt.ylabel('Value (y)')
     plt.grid(True)
-    plt.show()
 
     plt.savefig(outputPlot)
     plt.close()
