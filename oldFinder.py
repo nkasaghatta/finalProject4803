@@ -1,29 +1,23 @@
 import numpy as np
 import random, math
 import time, os
+
+
 # import Bio as bp
 # from numpy.core.multiarray import frombuffer
 def readFASTA(filename):
-    f = open(filename)
-    curr = f.readline()
-    lines = []
-    while True:
-        curr = f.readline()
-        while True:
-            if not curr:
-                break
-            if curr[0] == '>':
-                break
-            lines.append(curr.rstrip())
-            curr = f.readline()
-        if not curr:
-            return lines
+    with open(filename) as f:
+        lines = []
+        for line in f:
+            if line.startswith('>'):
+                continue
+            lines.append(line.rstrip())
+    return lines
 
 
 def readMotifLength(filename):
-    f = open(filename)
-    curr = int(f.readline())
-    return curr
+    with open(filename) as f:
+        return int(f.readline().strip())
 
 
 def writeMotif(pwm, ml, name, sc):
@@ -49,30 +43,26 @@ def writeSites(sites, name):
 
 
 nucleotide = ['A', 'C', 'G', 'T']
-ML = readMotifLength('testmotifLength.txt')
-sequences = readFASTA('testsequences.fa')
+ML = readMotifLength('motifLength.txt')
+sequences = readFASTA('sequences.fa')
 seqCount = len(sequences)
 seqLength = len(sequences[0])
 
 
 # returns 4-element list of background frequencies of each nucleotide
-def bgFreqCalc(sequences, seqCount, seqLength):
-    bgFreq = np.zeros(4)
-    for i in range(0, seqCount):
-        for j in range(0, seqLength):
-            if sequences[i][j] == 'A':
-                bgFreq[0] += 1
-            elif sequences[i][j] == 'C':
-                bgFreq[1] += 1
-            elif sequences[i][j] == 'G':
-                bgFreq[2] += 1
-            elif sequences[i][j] == 'T':
-                bgFreq[3] += 1
-    bgFreq = bgFreq / (seqLength * seqCount)
-    return bgFreq
+def bgFreqCalc(sequences):
+    count = np.zeros(4)
+    nucleotide_index = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
+
+    for seq in sequences:
+        for nucleotide in seq:
+            count[nucleotide_index[nucleotide]] += 1
+
+    total_nucleotides = len(sequences) * len(sequences[0])
+    return count / total_nucleotides
 
 
-bgFreq = bgFreqCalc(sequences, seqCount, seqLength)
+bgFreq = bgFreqCalc(sequences)
 
 
 # returns initial, randomly-selected motifs
@@ -117,30 +107,27 @@ def firstPWM(seqCount, motifs, ML):
 
 # Returns a new PWM given list of motifs and length of motifs
 def motifPWM(motifs, ML):
-    PWM = np.zeros((4, ML), dtype=float)
-    # PWM Calculation:
-    for i in range(ML):  # Loop over each position in the motif length
-        for motif in motifs:  # Loop over each motif
-            if motif[i] == nucleotide[0]:
-                PWM[0][i] += 1
-            elif motif[i] == nucleotide[1]:
-                PWM[1][i] += 1
-            elif motif[i] == nucleotide[2]:
-                PWM[2][i] += 1
-            elif motif[i] == nucleotide[3]:
-                PWM[3][i] += 1
-    PWM = PWM / seqCount  # converts frequency table to probability distributions
+    nucleotideIndex = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
+
+    motif_indices = np.array([[nucleotideIndex[nuc] for nuc in motif]
+                              for motif in motifs])
+    PWM = np.zeros((4, ML))
+    for nuc in range(4):
+        PWM[nuc, :] = np.sum(motif_indices == nuc, axis=0)
+    PWM /= len(motifs)
     return PWM
 
 
 # Calculates a score by comparing PWM to subsequence
-def scoreCalc(subSeq, PWM):
+Px = np.prod(bgFreq)
+
+
+def scoreCalc(subSeq, PWM, Px):
     Qx = 1
-    Px = bgFreq[0] * bgFreq[1] * bgFreq[2] * bgFreq[3]
 
     for i in range(0, len(subSeq)):
         currColumn = 0
-        for j in range(0, 3):
+        for j in range(0, 4):
             if subSeq[i] == nucleotide[j]:
                 currColumn = j
         Qx = Qx * PWM[currColumn][i]
@@ -153,6 +140,7 @@ def scoreCalc(subSeq, PWM):
 def normScores(scores):
     eTemp = np.exp(scores - np.max(scores))
     probDist = eTemp / eTemp.sum()
+    print(probDist[:])
     return probDist
 
 
@@ -160,6 +148,21 @@ def normScores(scores):
 def motifSelection(sequence, ML, probDist):
     motifStarting = np.random.choice(len(probDist), p=probDist)
     return sequence[motifStarting:motifStarting + ML]
+
+
+# ICPC calculator given
+def calcICPC(PWM, bgFreq):
+    IC = 0
+    q_b = len(PWM[0])
+    for i in range(0, len(PWM[0])):
+        for j in range(0, 4):
+            value = PWM[j][i]
+            if value > 0:
+                IC += PWM[j][i] * math.log2(PWM[j][i] / bgFreq[j])
+            else:
+                IC += 0
+    ICPC = IC / q_b
+    return ICPC
 
 
 # Runs gibbs sampling algorithm and keeps track of best motifs
@@ -176,9 +179,10 @@ def gibbs(sequences, seqCount, seqLength, ML, iterations):
 
     # Array to store the starting indexes of each motif
     startingIndexes = [0] * seqCount
-
-    for run in range(iterations):
-        prevPWM = []
+    prevPWM = []
+    prevStartingIndexes = []
+    ICPCdata = [0.0 for i in range(iterations)]
+    for run in range(0, iterations):
         for n in range(seqCount):
             excludedMotifs = motifs[:n] + motifs[n + 1:]
             currentPWM = motifPWM(excludedMotifs, ML)
@@ -187,40 +191,82 @@ def gibbs(sequences, seqCount, seqLength, ML, iterations):
             scores = []
             for i in range((seqLength - ML) + 1):
                 subSeq = sequences[n][i:i + ML]
-                score = scoreCalc(subSeq, currentPWM)
+                score = scoreCalc(subSeq, currentPWM, Px)
                 scores.append(score)
             probDist = normScores(scores)
+            print("RUN:  " + str(run) + "  N: " + str(n) + "  SCORES:   " + str(scores[:]))
 
             # Choose the next motif based on the calculated probability distribution
             nextStart = np.random.choice(range((seqLength - ML) + 1), p=probDist)
             motifs[n] = sequences[n][nextStart:nextStart + ML]
             startingIndexes[n] = nextStart  # Update the starting index for the current motif
 
+        if len(prevPWM) == 0:
+            outputPWM = motifPWM(motifs, ML)
+            prevPWM = outputPWM
+            prevStartingIndexes = startingIndexes
+        elif calcICPC(prevPWM, bgFreq) > calcICPC(motifPWM(motifs, ML), bgFreq):
+            outputPWM = prevPWM
+            startingIndexes = prevStartingIndexes
+        elif calcICPC(prevPWM, bgFreq) < calcICPC(motifPWM(motifs, ML), bgFreq):
+            prevPWM = motifPWM(motifs, ML)
+            prevStartingIndexes = startingIndexes
+        ICPCdata[run] = calcICPC(prevPWM, bgFreq)
+        print("RUN: " + str(run) + "       ICPC: " + str(ICPCdata[run]))
     outputPWM = motifPWM(motifs, ML)
-    return [outputPWM, motifs, startingIndexes]
+    return [outputPWM, startingIndexes, ICPCdata]
+
 
 def writeFreq(bgFreq, dir):
     f = open(os.path.join(dir, 'bgFreq.txt'), 'w')
     f.write(str(bgFreq[:]))
     f.close()
+
+
 def writeRunTime(duration, dir):
     f = open(os.path.join(dir, 'runningTime.txt'), 'w')
     f.write(str(duration) + '\n')
     f.close()
+
+
+def writeICPCData(data, dir):
+    f = open(os.path.join(dir, 'icpcdata.txt'), 'w')
+    for i in range(0, len(data)):
+        f.write(str(data[i]) + '\n')
+    f.close()
+
+
+def writeOutPWM(data, dir):
+    f = open(os.path.join(dir, 'outputPWM.txt'), 'w')
+    for i in range(0, 4):
+        f.write(str(data[i][:]) + '\n')
+    f.close()
+
+
+def writeStartingSites(data, dir):
+    f = open(os.path.join(dir, 'outputStartingSites.txt'), 'w')
+    for i in range(0, len(data)):
+        f.write(str(data[i]) + '\n')
+    f.close()
+
+
 def main():
     startTime = time.time()
 
-    test1, test2, test3 = gibbs(sequences, seqCount, seqLength, ML, 200)
+    test1, test2, test3 = gibbs(sequences, seqCount, seqLength, ML, 1000)
 
     duration = time.time() - startTime
     print(test1[:][:])
-    print(test2[:][:])
-    print(test3[:])
-    timeDir = "ICPC_" + str(2) + "_ML_" + str(ML) + "_SL_" + str(seqLength) + "_SC_" + str(seqCount)
+    print(test2[:])
+    timeDir = "ICPC_" + str(2) + "_ML_" + str(ML) + "_SL_" + str(
+        seqLength) + "_SC_" + str(seqCount)
     if not os.path.exists(timeDir):
         os.makedirs(timeDir)
     writeRunTime(duration, timeDir)
+    writeICPCData(test3, timeDir)
     writeFreq(bgFreq, timeDir)
+    writeOutPWM(test1, timeDir)
+    writeStartingSites(test2, timeDir)
+
 
 main()
-

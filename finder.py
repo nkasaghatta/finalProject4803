@@ -109,7 +109,8 @@ def firstPWM(seqCount, motifs, ML):
 def motifPWM(motifs, ML):
     nucleotideIndex = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
 
-    motif_indices = np.array([[nucleotideIndex[nuc] for nuc in motif] for motif in motifs])
+    motif_indices = np.array([[nucleotideIndex[nuc] for nuc in motif]
+                              for motif in motifs])
     PWM = np.zeros((4, ML))
     for nuc in range(4):
         PWM[nuc, :] = np.sum(motif_indices == nuc, axis=0)
@@ -123,7 +124,6 @@ Px = np.prod(bgFreq)
 
 def scoreCalc(subSeq, PWM, Px):
     Qx = 1
-
     for i in range(0, len(subSeq)):
         currColumn = 0
         for j in range(0, 4):
@@ -132,13 +132,15 @@ def scoreCalc(subSeq, PWM, Px):
         Qx = Qx * PWM[currColumn][i]
 
     score = Qx / Px
+    if score == 0.0:
+        score = 1e-10
     return score
 
 
 # Softmax Function applied to normalize scores into probability distribution
 def normScores(scores):
-    eTemp = np.exp(scores - np.max(scores))
-    probDist = eTemp / eTemp.sum()
+    scoreArr = np.array(scores)
+    probDist = scoreArr / (scoreArr.sum())
     return probDist
 
 
@@ -192,6 +194,7 @@ def gibbs(sequences, seqCount, seqLength, ML, iterations):
                 score = scoreCalc(subSeq, currentPWM, Px)
                 scores.append(score)
             probDist = normScores(scores)
+            # print("RUN:  " + str(run) + "  N: " + str(n) + "  SCORES:   " + str(probDist[:]))
 
             # Choose the next motif based on the calculated probability distribution
             nextStart = np.random.choice(range((seqLength - ML) + 1), p=probDist)
@@ -250,7 +253,7 @@ def writeStartingSites(data, dir):
 def main():
     startTime = time.time()
 
-    test1, test2, test3 = gibbs(sequences, seqCount, seqLength, ML, 500000)
+    test1, test2, test3 = gibbs(sequences, seqCount, seqLength, ML, 20000)
 
     duration = time.time() - startTime
     print(test1[:][:])
