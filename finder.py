@@ -3,8 +3,6 @@ import random, math
 import time, os
 
 
-# import Bio as bp
-# from numpy.core.multiarray import frombuffer
 def readFASTA(filename):
     with open(filename) as f:
         lines = []
@@ -118,18 +116,16 @@ def motifPWM(motifs, ML):
     return PWM
 
 
-# Calculates a score by comparing PWM to subsequence
-Px = np.prod(bgFreq)
-
-
-def scoreCalc(subSeq, PWM, Px):
+def scoreCalc(subSeq, PWM):
     Qx = 1
+    Px = 1
     for i in range(0, len(subSeq)):
         currColumn = 0
         for j in range(0, 4):
             if subSeq[i] == nucleotide[j]:
                 currColumn = j
         Qx = Qx * PWM[currColumn][i]
+        Px = Px * bgFreq[currColumn]
 
     score = Qx / Px
     if score == 0.0:
@@ -191,15 +187,15 @@ def gibbs(sequences, seqCount, seqLength, ML, iterations):
             scores = []
             for i in range((seqLength - ML) + 1):
                 subSeq = sequences[n][i:i + ML]
-                score = scoreCalc(subSeq, currentPWM, Px)
+                score = scoreCalc(subSeq, currentPWM)
                 scores.append(score)
             probDist = normScores(scores)
-            # print("RUN:  " + str(run) + "  N: " + str(n) + "  SCORES:   " + str(probDist[:]))
 
             # Choose the next motif based on the calculated probability distribution
             nextStart = np.random.choice(range((seqLength - ML) + 1), p=probDist)
             motifs[n] = sequences[n][nextStart:nextStart + ML]
-            startingIndexes[n] = nextStart  # Update the starting index for the current motif
+            startingIndexes[
+                n] = nextStart  # Update the starting index for the current motif
 
         if len(prevPWM) == 0:
             outputPWM = motifPWM(motifs, ML)
@@ -212,7 +208,6 @@ def gibbs(sequences, seqCount, seqLength, ML, iterations):
             prevPWM = motifPWM(motifs, ML)
             prevStartingIndexes = startingIndexes
         ICPCdata[run] = calcICPC(prevPWM, bgFreq)
-        print("RUN: " + str(run) + "       ICPC: " + str(ICPCdata[run]))
     outputPWM = motifPWM(motifs, ML)
     return [outputPWM, startingIndexes, ICPCdata]
 
@@ -251,22 +246,21 @@ def writeStartingSites(data, dir):
 
 
 def main():
-    startTime = time.time()
 
-    test1, test2, test3 = gibbs(sequences, seqCount, seqLength, ML, 20000)
-
-    duration = time.time() - startTime
-    print(test1[:][:])
-    print(test2[:])
-    timeDir = "ICPC_" + str(2) + "_ML_" + str(ML) + "_SL_" + str(
-        seqLength) + "_SC_" + str(seqCount)
-    if not os.path.exists(timeDir):
+    for i in range(0, 10):
+      startTime = time.time()
+      test1, test2, test3 = gibbs(sequences, seqCount, seqLength, ML, 10000)
+      print(test1[:][:])
+      print(test2[:])
+      timeDir = "ICPC_" + str(2) + "_ML_" + str(ML) + "_SL_" + str(
+        seqLength) + "_SC_" + str(seqCount) + "_5_" + "RUN_" + str(i)
+      duration = time.time() - startTime
+      if not os.path.exists(timeDir):
         os.makedirs(timeDir)
-    writeRunTime(duration, timeDir)
-    writeICPCData(test3, timeDir)
-    writeFreq(bgFreq, timeDir)
-    writeOutPWM(test1, timeDir)
-    writeStartingSites(test2, timeDir)
-
+      writeRunTime(duration, timeDir)
+      writeICPCData(test3, timeDir)
+      writeFreq(bgFreq, timeDir)
+      writeOutPWM(test1, timeDir)
+      writeStartingSites(test2, timeDir)
 
 main()
